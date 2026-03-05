@@ -11,3 +11,52 @@ The rRNA sequences are included as targets.
 Behavior: Because rRNA is a major biological signal, we count it to "account" for the library composition.
 Result: These reads ARE present in your quant.sf file with very high counts.
 Downstream Action: You must filter out these rRNA rows in R before running DESeq2. If left in, the massive ribosomal counts will dominate the statistical normalization and lead to incorrect results.
+
+
+```
+grep "Mapping rate" */logs/salmon_quant.log
+```
+Check json file:
+```
+cat Ag2_B-2_R1_001.fastq_quant/lib_format_counts.json
+
+This should give
+
+
+{
+    "read_files": "[ Ag2_B-2_R1_001.fastq.gz, Ag2_B-2_R2_001.fastq.gz]",
+    "expected_format": "ISR",
+    "compatible_fragment_ratio": 1.0,
+    "num_compatible_fragments": 18387017,
+    "num_assigned_fragments": 18387017,
+    "num_frags_with_concordant_consistent_mappings": 10339129,
+    "num_frags_with_inconsistent_or_orphan_mappings": 8192220,
+    "strand_mapping_bias": 9.671993678384932e-8,
+    "MSF": 0,
+    "OSF": 0,
+    "ISF": 1,
+    "MSR": 0,
+    "OSR": 0,
+    "ISR": 10339129,
+    "SF": 3068231,
+    "SR": 5123988,
+    "MU": 0,
+    "OU": 0,
+    "IU": 0,
+    "U": 0
+}
+```
+
+Explanation
+1. The Good: Strandedness is Perfect
+expected_format": "ISR": Your library is Stranded-Reverse (very common for Illumina TruSeq Stranded kits).
+compatible_fragment_ratio": 1.0: This is perfect. It means 100% of the fragments Salmon could map matched the expected strand. Salmon is not "losing" any data due to strand settings.
+2. The Interesting: Why is Mapping ~49%?
+Look at these two lines:
+num_frags_with_concordant_consistent_mappings": 10,339,129 (These are "perfect" pairs)
+num_frags_with_inconsistent_or_orphan_mappings": 8,192,220 (These are "orphans" or "discordant" pairs)
+The Interpretation:
+You have about 8 million fragments where only one side of the pair (R1 or R2) mapped well, or they mapped to different genes, or they were too far apart. In bacteria, this often happens because:
+Operon Structure: Reads might span across two different genes in the same operon, confusing the "paired-end" logic.
+Fragment Length: If your library had many very short fragments, the R1 and R2 might overlap or be "discordant."
+
