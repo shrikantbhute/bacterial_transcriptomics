@@ -14,7 +14,7 @@ This pipeline is designed and optimized for the following data types:
 # 1. Reference Preparation (Indexing)
 Bacterial genomes consist mostly of coding regions (ORFs), but reads can still map to intergenic spaces. We use a "Gentrome" approach with Decoy-Aware Indexing to prevent these reads from being incorrectly counted as gene expression.
 
-# Step 1: Prepare the "Gentrome"
+## Step 1: Prepare the "Gentrome"
 The Gentrome contains all target transcripts (CDS) followed by the full genome sequence.
 ```
 # Example: Combine Coding Sequences and Whole Genome. CDS must come FIRST so Salmon prioritizes gene mapping
@@ -22,7 +22,7 @@ The Gentrome contains all target transcripts (CDS) followed by the full genome s
 cat cds_from_genomic.fna genome.fna > gentrome.fna
 ```
 
-# Step 2: Extract Decoy Names
+## Step 2: Extract Decoy Names
 Salmon needs to know which sequences in the file are the "background" (the chromosomes/plasmids).
 
 ```
@@ -30,7 +30,7 @@ Salmon needs to know which sequences in the file are the "background" (the chrom
 grep "^>" genome.fna | cut -d " " -f 1 | sed 's/>//g' > decoys.txt
 ```
 
-# Step 3: Build the Index
+## Step 3: Build the Index
 
 ```
 # Import the Salmon path before running the command below
