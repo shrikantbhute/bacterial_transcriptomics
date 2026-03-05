@@ -5,10 +5,11 @@ This pipeline provides a high-performance workflow for quantifying bacterial gen
 ## Sequencing Compatibility
 
 This pipeline is designed and optimized for the following data types:
-Paired-End Reads: Required for maximum mapping accuracy and fragment length estimation.
-Illumina Platforms: Compatible with HiSeq, NextSeq, and MiSeq data.
-Stranded or Unstranded: Automatically detects library orientation (Sense/Antisense), which is critical for bacterial operon analysis.
-Ribosomal RNA (rRNA) Depleted: Suitable for total RNA-seq where rRNA has been removed (typically via Ribo-Zero).
+
+- Paired-End Reads: Required for maximum mapping accuracy and fragment length estimation.
+- Illumina Platforms: Compatible with HiSeq, NextSeq, and MiSeq data.
+- Stranded or Unstranded: Automatically detects library orientation (Sense/Antisense), which is critical for bacterial operon analysis.
+- Ribosomal RNA (rRNA) Depleted: Suitable for total RNA-seq where rRNA has been removed (typically via Ribo-Zero).
 
 # 1. Reference Preparation (Indexing)
 Bacterial genomes consist mostly of coding regions (ORFs), but reads can still map to intergenic spaces. We use a "Gentrome" approach with Decoy-Aware Indexing to prevent these reads from being incorrectly counted as gene expression.
