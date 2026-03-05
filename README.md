@@ -1,6 +1,6 @@
 # Bacterial Transcriptomics Pipeline with Salmon
 
-This pipeline provides a high-performance workflow for quantifying bacterial gene expression. It is optimized for prokaryotic genomes, which are gene-dense and often contain plasmids.
+This repository contains a high-performance workflow for quantifying bacterial gene expression. It is optimized for prokaryotic genomes (e.g., Shewanella oneidensis MR-1) and specifically addresses removal of rRNA content from the libraries.
 
 ## Sequencing Compatibility
 
@@ -11,36 +11,55 @@ This pipeline is designed and optimized for the following data types:
 - Stranded or Unstranded: Automatically detects library orientation (Sense/Antisense), which is critical for bacterial operon analysis.
 - Ribosomal RNA (rRNA) Depleted: Suitable for total RNA-seq where rRNA has been removed (typically via Ribo-Zero).
 
-# 1. Reference Preparation (Indexing)
-Bacterial genomes consist mostly of coding regions (ORFs), but reads can still map to intergenic spaces. We use a "Gentrome" approach with Decoy-Aware Indexing to prevent these reads from being incorrectly counted as gene expression.
+# 1. Reference Preparation (rRNA-aware Indexing)
+In many bacterial samples, rRNA can make up >90% of the reads. Instead of filtering them out with general databases, we extract the isolate-specific rRNA and include them in the Salmon index as targets. This "sinks" the rRNA reads, providing an accurate mapping rate and cleaner mRNA data.
 
-## Step 1: Prepare the "Gentrome"
-The Gentrome contains all target transcripts (CDS) followed by the full genome sequence.
-```
-# Example: Combine Coding Sequences and Whole Genome. CDS must come FIRST so Salmon prioritizes gene mapping
 
-cat cds_from_genomic.fna genome.fna > gentrome.fna
-```
+## Step 1: Install gffread
+If not available on your cluster, download the standalone binary to your project space:
 
-## Step 2: Extract Decoy Names
-Salmon needs to know which sequences in the file are the "background" (the chromosomes/plasmids).
 
 ```
-# Extract headers from the genome file to define what is a "decoy"
-grep "^>" genome.fna | cut -d " " -f 1 | sed 's/>//g' > decoys.txt
+cd /u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/
+
+wget http://ccb.jhu.edu/software/stringtie/dl/gffread-0.12.7.Linux_x86_64.tar.gz
+
+tar -xvzf gffread-0.12.7.Linux_x86_64.tar.gz
+
 ```
 
-## Step 3: Build the Index
+## Step 2: Extract rRNA Sequences from the genome file.
 
 ```
-# Import the Salmon path before running the command below
+# Path: /u/home/j/jpjacobs/project-jpjacobs/yang/shewanella_ref_genome/data/GCF_000146165.2/
+/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/gffread-0.12.7.Linux_x86_64/gffread \
+-w rrna.fa \
+-g GCF_000146165.2_ASM14616v2_genomic.fna \
+-r rRNA \
+genomic.gff
+```
 
-salmon index -t gentrome.fna -d decoys.txt -i bacterial_index -p 8
 
--t (Transcriptome): The combined Gentrome file.
--d (Decoys): The list of IDs Salmon should treat as genomic background.
--i (Index): The output directory for the built index.
+## Step 3: Create the "Gentrome" & Decoys
+The Gentrome must contain all transcripts (CDS + rRNA) followed by the whole genome.
 
+
+```
+# Combine sequences (Order: CDS -> rRNA -> Genome)
+cat cds_from_genomic.fna rrna.fa GCF_000146165.2_ASM14616v2_genomic.fna > gentrome_plus_rrna.fna
+
+# Extract headers for the decoy list (Genome only)
+grep "^>" GCF_000146165.2_ASM14616v2_genomic.fna | cut -d " " -f 1 | sed 's/>//g' > decoys.txt
+
+```
+
+## Step 4: Build the Index
+```
+/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/salmon/salmon-latest_linux_x86_64/bin/salmon index \
+-t gentrome_plus_rrna.fna \
+-d decoys.txt \
+-i shewanella_rrna_index \
+-p 8
 ```
 
 # 2. Cluster Quantification Script (salmon_quant.sh)
@@ -60,11 +79,12 @@ module load anaconda3
 
 # --- PATH CONFIGURATION ---
 # Use ABSOLUTE paths to ensure compute nodes find the files
+# --- ABSOLUTE PATHS ---
 SALMON="/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/salmon/salmon-latest_linux_x86_64/bin/salmon"
-INDEX="/u/home/j/jpjacobs/project-jpjacobs/yang/shewanella_ref_genome/data/shewanella_index"
+INDEX="/u/home/j/jpjacobs/project-jpjacobs/yang/shewanella_ref_genome/data/GCF_000146165.2/shewanella_rrna_index"
 
 # --- EXECUTION ---
-# $1 = Read 1 file, $2 = Read 2 file
+# $1 = R1 file, $2 = R2 file
 $SALMON quant -i "$INDEX" \
              -l A \
              -1 "$1" \
