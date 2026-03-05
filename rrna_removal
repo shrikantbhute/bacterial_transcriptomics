@@ -60,3 +60,49 @@ You have about 8 million fragments where only one side of the pair (R1 or R2) ma
 Operon Structure: Reads might span across two different genes in the same operon, confusing the "paired-end" logic.
 Fragment Length: If your library had many very short fragments, the R1 and R2 might overlap or be "discordant."
 
+
+
+
+Get rRNA and mRNA read counts
+
+```
+#!/bin/bash
+
+# Header for the output file
+printf "%-30s %-15s %-15s %-15s %-10s\n" "Sample" "Total_Mapped" "rRNA_Reads" "mRNA_Reads" "rRNA_%" > mapping_summary.txt
+printf "%-30s %-15s %-15s %-15s %-10s\n" "------------------------------" "---------------" "---------------" "---------------" "----------" >> mapping_summary.txt
+
+# Loop through all Salmon quant folders
+for dir in *_quant/; do
+    quant_file="${dir}quant.sf"
+    
+    if [ -f "$quant_file" ]; then
+        # Sample Name (remove trailing slash and _quant)
+        sample=$(basename "$dir" _quant)
+        
+        # Calculate all values in a single awk pass for speed and stability
+        # $5 is NumReads. We skip the header (NR>1).
+        stats=$(awk '
+            BEGIN {total=0; rrna=0}
+            NR > 1 {
+                total += $5;
+                if ($1 ~ /^rna-/) { rrna += $5 }
+            }
+            END {
+                mrna = total - rrna;
+                perc = (total > 0) ? (rrna / total) * 100 : 0;
+                printf "%.0f %.0f %.0f %.2f", total, rrna, mrna, perc
+            }' "$quant_file")
+
+        # Read the awk output into variables
+        read total rrna mrna perc <<< "$stats"
+
+        # Write to file with clean columns
+        printf "%-30s %-15s %-15s %-15s %-10s%%\n" "$sample" "$total" "$rrna" "$mrna" "$perc" >> mapping_summary.txt
+    else
+        echo "Warning: $quant_file not found. Skipping."
+    fi
+done
+
+echo "Summary complete! Results saved to mapping_summary.txt"
+```
