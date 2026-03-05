@@ -7,7 +7,7 @@ This repository contains a high-performance workflow for quantifying bacterial g
 This pipeline is designed and optimized for the following data types:
 
 - Paired-End Reads: Required for maximum mapping accuracy and fragment length estimation.
-- Illumina Platforms: Compatible with HiSeq, NextSeq, and MiSeq data.
+- Illumina Platforms: Compatible with HiSeq, NextSeq, and NovoSeq data.
 - Stranded or Unstranded: Automatically detects library orientation (Sense/Antisense), which is critical for bacterial operon analysis.
 - Ribosomal RNA (rRNA) Depleted: Suitable for total RNA-seq where rRNA has been removed (typically via Ribo-Zero).
 
