@@ -1,0 +1,13 @@
+## Remember to remove the reads identified as rRNA in the quant file.
+
+3. Data Interpretation: Decoys vs. rRNA Targets
+This pipeline handles "non-target" reads in two distinct ways:
+A. Decoys (The Whole Genome)
+The whole genome is marked as a decoy.
+Behavior: If a read maps better to a non-coding intergenic region than to a gene, Salmon ignores it.
+Result: These reads are not present in your quant.sf file. They are filtered out automatically to reduce noise.
+B. rRNA Targets (The rrna.fa file)
+The rRNA sequences are included as targets.
+Behavior: Because rRNA is a major biological signal, we count it to "account" for the library composition.
+Result: These reads ARE present in your quant.sf file with very high counts.
+Downstream Action: You must filter out these rRNA rows in R before running DESeq2. If left in, the massive ribosomal counts will dominate the statistical normalization and lead to incorrect results.
