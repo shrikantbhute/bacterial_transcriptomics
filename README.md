@@ -1,125 +1,164 @@
 # Bacterial Transcriptomics Pipeline with Salmon
 
-This repository contains a high-performance workflow for quantifying bacterial gene expression. It is optimized for prokaryotic genomes (e.g., Shewanella oneidensis MR-1) and specifically addresses removal of rRNA content from the libraries.
+This repository contains a high-performance workflow for quantifying bacterial gene expression. It is optimized for prokaryotic genomes (e.g., Shewanella oneidensis MR-1) and features an rRNA-aware indexing strategy to cleanly account for and isolate residual ribosomal RNA contamination from true coding mRNA sequences.
 
-## Sequencing Compatibility
+# Sequencing Compatibility
 
 This pipeline is designed and optimized for the following data types:
 
-- Paired-End Reads: Required for maximum mapping accuracy and fragment length estimation.
-- Illumina Platforms: Compatible with HiSeq, NextSeq, and NovoSeq data.
-- Stranded or Unstranded: Automatically detects library orientation (Sense/Antisense), which is critical for bacterial operon analysis.
-- Ribosomal RNA (rRNA) Depleted: Suitable for total RNA-seq where rRNA has been removed (typically via Ribo-Zero).
+- Paired-End Reads: Required for maximum structural mapping accuracy and discordant/dovetail fragment filtering.
 
-# 1. Reference Preparation (rRNA-aware Indexing)
-In many bacterial samples, rRNA can make up >90% of the reads. Instead of filtering them out with general databases, we extract the isolate-specific rRNA and include them in the Salmon index as targets. This "sinks" the rRNA reads, providing an accurate mapping rate and cleaner mRNA data.
+- Illumina Platforms: Natively compatible with HiSeq, NextSeq, and NovaSeq output files.
 
+- Automated Strandedness Detection: Salmon automatically infers library orientation (e.g., ISR, ISF), protecting downstream bacterial operon architectures.
 
-## Step 1: Install gffread
-If not available on your cluster, download the standalone binary to your project space:
+- Total RNA-Seq (Ribosomal Depleted): Tailored for datasets treated with wet-lab rRNA depletion kits (e.g., Ribo-Zero) where variable extraction efficiency occurs.
 
+ # 1. Reference Preparation (rRNA-Aware Indexing)
+In bacterial transcriptomics, residual rRNA can dominate sequencing space if wet-lab depletion varies. Rather than discarding these or allowing them to distort coding alignments, we bundle standard coding sequences (CDS) and ribosomal features (rna-) alongside whole-genome decoys. This provides a competitive "sink" that absorbs technical noise while yielding non-ambiguous mRNA profiles.
 
-```
-cd /u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/
+## Step 1: Establish Your Core Genomes and Transcripts
+Acquire your reference assembly (.fna) and annotated transcript target sequences from NCBI or RefSeq.
 
-wget http://ccb.jhu.edu/software/stringtie/dl/gffread-0.12.7.Linux_x86_64.tar.gz
-
-tar -xvzf gffread-0.12.7.Linux_x86_64.tar.gz
-
-```
-
-## Step 2: Extract rRNA Sequences from the genome file.
-
-```
-# Path: /u/home/j/jpjacobs/project-jpjacobs/yang/shewanella_ref_genome/data/GCF_000146165.2/
-/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/gffread-0.12.7.Linux_x86_64/gffread \
--w rrna.fa \
--g GCF_000146165.2_ASM14616v2_genomic.fna \
--r rRNA \
-genomic.gff
-```
-
-
-## Step 3: Create the "Gentrome" & Decoys
-The Gentrome must contain all transcripts (CDS + rRNA) followed by the whole genome.
-
-
-```
-# Combine sequences (Order: CDS -> rRNA -> Genome)
-cat cds_from_genomic.fna rrna.fa GCF_000146165.2_ASM14616v2_genomic.fna > gentrome_plus_rrna.fna
-
-# Extract headers for the decoy list (Genome only)
-grep "^>" GCF_000146165.2_ASM14616v2_genomic.fna | cut -d " " -f 1 | sed 's/>//g' > decoys.txt
-
-```
-
-## Step 4: Build the Index
-```
-/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/salmon/salmon-latest_linux_x86_64/bin/salmon index \
--t gentrome_plus_rrna.fna \
--d decoys.txt \
--i shewanella_rrna_index \
--p 8
-```
-
-# 2. Cluster Quantification Script (salmon_quant.sh)
-This script is designed to run on UCLA Hoffman. It uses positional arguments to process samples in parallel across the cluster. Changes may be needed to make it work on your HPC system.
+## Step 2: Build the Decoy Index
+Save the following blueprint as 1_build_salmon_index.sh to generate a decoy-aware Shewanella index.
 
 ```
 #!/bin/bash
 #$ -cwd
-#$ -o joblog.$JOB_ID
+#$ -o build_index.log
 #$ -j y
-#$ -l h_rt=24:00:00,h_data=8G
-#$ -pe shared 8
+#$ -l h_rt=01:00:00,h_data=4G,slots=4
 
-# Load environment
-. /u/local/Modules/default/init/modules.sh
-module load anaconda3
+set -e
 
-# --- PATH CONFIGURATION ---
-# Use ABSOLUTE paths to ensure compute nodes find the files
-# --- ABSOLUTE PATHS ---
-SALMON="/u/home/j/jpjacobs/project-jpjacobs/software_rna_seq/salmon/salmon-latest_linux_x86_64/bin/salmon"
-INDEX="/u/home/j/jpjacobs/project-jpjacobs/yang/shewanella_ref_genome/data/GCF_000146165.2/shewanella_rrna_index"
+# --- Configuration ---
+GENOME="Shewanella_oneidensis_MR-1_genome.fna"
+TRANSCRIPTOME="Shewanella_oneidensis_MR-1_rna.fna"
+DECOY_HEADERS="decoys.txt"
+INDEX_NAME="shewanella_decoy_index"
 
-# --- EXECUTION ---
-# $1 = R1 file, $2 = R2 file
-$SALMON quant -i "$INDEX" \
-             -l A \
-             -1 "$1" \
-             -2 "$2" \
-             -p 8 \
-             --gcBias \
-             --validateMappings \
-             -o "${1%.fastq.gz}_quant"
+echo "Building structural decoys..."
+grep "^>" "$GENOME" | cut -d ' ' -f 1 | sed 's/^>//' > "$DECOY_HEADERS"
 
+echo "Merging transcript targets and genomic scaffolds..."
+cat "$TRANSCRIPTOME" "$GENOME" > combined_ref.fna
 
--l A (Library Type): Automatically determines if the library is stranded (ISR/ISF) or unstranded (U).
---gcBias: Bacterial genomes have high variability in GC content. This corrects for coverage biases introduced during PCR/sequencing.
---validateMappings: Uses a more rigorous alignment check to ensure reads are assigned to the correct gene, especially useful for similar genes in different operons.
--o ${1%.fastq.gz}_quant: Dynamically creates a results folder based on the R1 filename.
+echo "Executing Salmon Indexer..."
+salmon index \
+    -t combined_ref.fna \
+    -d "$DECOY_HEADERS" \
+    -i "$INDEX_NAME" \
+    -p 4 \
+    --gencode
+
+echo "Salmon index built successfully."
 ```
 
-# 3. Batch Submission Loop
-Run this from your data folder to submit every sample as an independent job.
+# 2. Cluster Quantification Script
+Rather than manually managing parallel execution loops over your cluster terminal, use this integrated array handler. It isolates files cleanly inside a designated output directory (quant_results/), catches missing mate pairs, and tracks stream corruption.
+
+Save this file as 2_run_salmon_quant.sh:
 ```
-for f in *R1_001.fastq.gz; do 
-    # Extract the base name (e.g., Ag1_)
-    name=$(basename "$f" R1_001.fastq.gz)
+#!/bin/bash
+#$ -cwd
+#$ -o salmon_batch_quant.log
+#$ -j y
+#$ -l h_rt=08:00:00,h_data=4G,slots=4
+
+# --- Configuration ---
+FASTQ_DIR="./raw_reads"
+OUTPUT_DIR="./quant_results"
+INDEX="shewanella_decoy_index"
+
+mkdir -p "$OUTPUT_DIR"
+
+echo "Beginning mass quantification..."
+
+for r1_file in "${FASTQ_DIR}"/*_R1_001.fastq.gz; do
+    [ -e "$r1_file" ] || continue
+
+    # Derive matching reverse mate cleanly
+    r2_file="${r1_file/_R1_001.fastq.gz/_R2_001.fastq.gz}"
+    base_name=$(basename "$r1_file" _R1_001.fastq.gz)
+    sample_out_dir="${OUTPUT_DIR}/${base_name}_quant"
+
+    if [ ! -f "$r2_file" ]; then
+        echo "[ERROR] Missing reverse pair file for: ${base_name}. Skipping sample."
+        continue
+    fi
+
+    echo "Quantifying Sample: ${base_name}"
     
-    # Identify the matching R2 mate
-    r2="${name}R2_001.fastq.gz"
-    
-    echo "Submitting Sample: $name"
-    
-    # Pass R1 and R2 filenames to the script as $1 and $2
-    qsub ../rna_scripts/salmon_quant.sh "$f" "$r2"
+    salmon quant \
+        -i "$INDEX" \
+        -l A \
+        -1 "$r1_file" \
+        -2 "$r2_file" \
+        -p 4 \
+        --validateMappings \
+        -o "$sample_out_dir"
+done
+
+echo "Batch processing completed successfully."
+```
+
+# 3. Results Summary and Extraction
+Because bacterial total RNA libraries exhibit variable Ribo-Zero depletion efficiency across samples, we parse the mapping metrics to verify coding depth before initiating downstream calculations in R (DESeq2 / edgeR).
+
+This script uses a fast awk pass targeting specific structural annotation flags (^rna-) to isolate mRNA reads from residual rRNA signals.
+
+Save this file as 3_summarize_quant_results.sh:
+
+```
+#!/bin/bash
+#$ -cwd
+#$ -o summary_job.log
+#$ -j y
+#$ -l h_rt=00:15:00,h_data=2G
+
+RESULTS_DIR="./quant_results"
+OUTPUT_FILE="mapping_summary.txt"
+
+# Formulate column alignments
+printf "%-30s %-15s %-15s %-15s %-10s\n" "Sample" "Total_Mapped" "rRNA_Reads" "mRNA_Reads" "rRNA_%" > "$OUTPUT_FILE"
+printf "%-30s %-15s %-15s %-15s %-10s\n" "------------------------------" "---------------" "---------------" "---------------" "----------" >> "$OUTPUT_FILE"
+
+if [ ! -d "$RESULTS_DIR" ]; then
+    echo "[ERROR] Target output directory ${RESULTS_DIR} not found!" >> summary_job.log
+    exit 1
+```text
+for dir in "${RESULTS_DIR}"/*_quant/; do
+    [ -e "$dir" ] || continue
+    quant_file="${dir}quant.sf"
+
+    if [ -f "$quant_file" ]; then
+        sample=$(basename "$dir" _quant)
+
+        # Evaluate mapped target distributions
+        stats=$(awk '
+            BEGIN {total=0; rrna=0}
+            NR > 1 {
+                total += $5;
+                if ($1 ~ /^rna-/) { rrna += $5 }
+            }
+            END {
+                mrna = total - rrna;
+                perc = (total > 0) ? (rrna / total) * 100 : 0;
+                printf "%.0f %.0f %.0f %.2f", total, rrna, mrna, perc
+            }' "$quant_file")
+
+        read total rrna mrna perc <<< "$stats"
+        printf "%-30s %-15s %-15s %-15s %-10s%%\n" "$sample" "$total" "$rrna" "$mrna" "$perc" >> "$OUTPUT_FILE"
+    fi
 done
 ```
-
 # 4. Expected Outputs
-- quant.sf: The primary results file containing TPM (normalized) and raw counts.
-- logs/: Check salmon_quant.log to see the Mapping Rate (aim for >70% in well-sequenced samples).
-- lib_format_counts.json: Confirms whether your library was stranded or not.
+Running the pipeline yields the following files within your output folders:
 
+- quant.sf: The primary quantification matrix containing estimated transcript lengths, effective lengths, TPM (Transcripts Per Million), and raw sequence counts. Use this directly for tximport into R.
+
+- logs/salmon_quant.log: Contains internal statistics. Review this file if your overall mapping efficiency shifts unexpectedly.
+
+- mapping_summary.txt: A cleanly tabularized summary file providing an informative bird's-eye view of your coding depth vs. ribosomal contamination.
+- 
